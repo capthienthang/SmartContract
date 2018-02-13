@@ -75,7 +75,7 @@ contract HireGoCrowdsale is Ownable {
 
         rate = 25E13; // wei per 1 token (0.00025ETH)
 
-        hardCap = 100000 ether;
+        hardCap = 15575 ether;
         icoEndDateIncCount = 0;
         icoMinPurchase = 100 finney; // 0.1 ETH
         isRefundAllowed = false;
