@@ -77,7 +77,7 @@ contract HireGoCrowdsale is Ownable {
 
         hardCap = 11575 ether;
         icoEndDateIncCount = 0;
-        icoMinPurchase = 100 finney; // 0.1 ETH
+        icoMinPurchase = 250 szabo; // 0.05 ETH
         isRefundAllowed = false;
     }
 
