@@ -73,11 +73,11 @@ contract HireGoCrowdsale is Ownable {
         icoEndTime = _icoEndTime;
         wallet = _wallet;
 
-        rate = 25E13; // wei per 1 token (0.00025ETH)
+        rate = 250 szabo; // 0.00025ETH
 
         hardCap = 11575 ether;
         icoEndDateIncCount = 0;
-        icoMinPurchase = 250 szabo; // 0.05 ETH
+        icoMinPurchase = 50 finney; // 0.05 ETH
         isRefundAllowed = false;
     }
 
