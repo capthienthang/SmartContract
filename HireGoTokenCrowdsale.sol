@@ -20,6 +20,7 @@ contract HireGoCrowdsale is Ownable {
 
     uint public icoStartTime;
     uint public icoEndTime;
+    uint public totalWeiRaised;
     uint public weiRaised;
     uint public hardCap; // amount of ETH collected, which marks end of crowd sale
     uint public tokensDistributed; // amount of bought tokens
@@ -31,7 +32,7 @@ contract HireGoCrowdsale is Ownable {
     uint internal baseBonus3 = 130;
     uint internal baseBonus4 = 120;
     uint internal baseBonus5 = 110;
-	uint internal baseBonus6 = 100;
+	  uint internal baseBonus6 = 100;
     uint public manualBonus;
     /* * * * * * * * * * * * * * * * * * */
 
@@ -48,7 +49,7 @@ contract HireGoCrowdsale is Ownable {
     event FundsWithdrawn(address _who, uint256 _amount);
 
     modifier hardCapNotReached() {
-        require(weiRaised < hardCap);
+        require(totalWeiRaised < hardCap);
         _;
     }
 
@@ -73,7 +74,7 @@ contract HireGoCrowdsale is Ownable {
         icoEndTime = _icoEndTime;
         wallet = _wallet;
 
-        rate = 250 szabo; // 0.00025ETH
+        rate = 250 szabo; // wei per 1 token (0.00025ETH)
 
         hardCap = 11575 ether;
         icoEndDateIncCount = 0;
@@ -105,24 +106,10 @@ contract HireGoCrowdsale is Ownable {
         isRefundAllowed = true;
     }
 
-    // Sends ordered tokens to investors after ICO end if soft cap is reached
-    // tokens can be send only if ico has ended
-    function sendOrderedTokens() public onlyOwner crowdsaleEnded {
-        address investor;
-        uint tokensCount;
-        for(uint i = 0; i < investors_number.length; i++) {
-            investor = investors_number[i];
-            tokensCount = orderedTokens[investor];
-            assert(tokensCount > 0);
-            orderedTokens[investor] = 0;
-            token.transfer(investor, tokensCount);
-        }
-    }
-
-    // Moves ICO ending date by one month. End date can be moved only 3 times.
+    // Moves ICO ending date by one month. End date can be moved only 1 times.
     // Returns true if ICO end date was successfully shifted
     function moveIcoEndDateByOneMonth(uint bonus_percentage) public onlyOwner crowdsaleInProgress returns (bool) {
-        if (icoEndDateIncCount < 3) {
+        if (icoEndDateIncCount < 1) {
             icoEndTime = icoEndTime.add(30 days);
             icoEndDateIncCount++;
             newBonus_and_newPeriod = true;
@@ -150,7 +137,11 @@ contract HireGoCrowdsale is Ownable {
             contributedWei = contributors[investor];
             tokens = orderedTokens[investor];
             if(contributedWei > 0) {
+                totalWeiRaised = totalWeiRaised.sub(contributedWei);
                 weiRaised = weiRaised.sub(contributedWei);
+                if(weiRaised<0){
+                  weiRaised = 0;
+                }
                 contributors[investor] = 0;
                 orderedTokens[investor] = 0;
                 tokensDistributed = tokensDistributed.sub(tokens);
@@ -186,7 +177,7 @@ contract HireGoCrowdsale is Ownable {
     }
 
     function distribute_for_founders() public crowdsaleEnded onlyOwner {
-        uint to_send = totalSupply.div(10).mul(40); //40%
+        uint to_send = 40000000000000000000000000; //40m
         checkAndMint(to_send);
         token.transfer(wallet, to_send);
     }
@@ -208,100 +199,68 @@ contract HireGoCrowdsale is Ownable {
         uint _tokens;
 
         //check for hardcap overflow
-        if (_weiAmount.add(weiRaised) > hardCap) {
-            cleanWei = hardCap.sub(weiRaised);
+        if (_weiAmount.add(totalWeiRaised) > hardCap) {
+            cleanWei = hardCap.sub(totalWeiRaised);
             change = _weiAmount.sub(cleanWei);
         }
         else cleanWei = _weiAmount;
 
-        assert(cleanWei > 3); // 3 wei is a price of minimal fracture of token
-        _tokens = cleanWei.mul(rate).mul(2500).div(1 ether);
+        assert(cleanWei > 4); // 4 wei is a price of minimal fracture of token
+
+        _tokens = cleanWei.div(rate).mul(1 ether);
 
         if (contributors[_beneficiary] == 0) investors_number.push(_beneficiary);
 
-        _tokens = calculateBonus(_tokens, cleanWei);
+        _tokens = calculateBonus(_tokens);
         checkAndMint(_tokens);
 
         contributors[_beneficiary] = contributors[_beneficiary].add(cleanWei);
         weiRaised = weiRaised.add(cleanWei);
+        totalWeiRaised = totalWeiRaised.add(cleanWei);
         tokensDistributed = tokensDistributed.add(_tokens);
         orderedTokens[_beneficiary] = orderedTokens[_beneficiary].add(_tokens);
 
         if (change > 0) _beneficiary.transfer(change);
+
+        token.transfer(_beneficiary,_tokens);
     }
 
     // Calculates bonuses based on current stage
-    function calculateBonus(uint _baseAmount, uint _wei) internal returns (uint) {
-        require(_baseAmount > 0 && _wei > 0);
+    function calculateBonus(uint _baseAmount) internal returns (uint) {
+        require(_baseAmount > 0);
 
         if (now >= icoStartTime && now < icoEndTime) {
-            return calculateBonusIco(_baseAmount, _wei);
+            return calculateBonusIco(_baseAmount);
         }
         else return _baseAmount;
     }
 
-    function setBonusForNextStage (uint newBonusPercentage) public onlyOwner {
-        manualBonus = newBonusPercentage.add(100);
-        new_bonus_for_next_period = true;
-    }
-
-    function check_for_manual_bonus (uint _baseBonus) internal returns (uint) {
-        if (new_bonus_for_next_period) {
-            new_bonus_for_next_period = false;
-            return manualBonus;
-        } else
-            return _baseBonus;
-    }
-
     // Calculates bonuses, specific for the ICO
     // Contains date and volume based bonuses
-    function calculateBonusIco(uint _baseAmount, uint _wei) internal returns(uint) {
-        if(now >= icoStartTime && now < 1520726399) {
+    function calculateBonusIco(uint _baseAmount) internal returns(uint) {
+        if(now >= icoStartTime && now < 1520726399) {//3:55-4
             // 4-10 Mar - 60% bonus
-			baseBonus1 = check_for_manual_bonus(baseBonus1);
             return _baseAmount.mul(baseBonus1).div(100);
         }
         else if(now >= 1520726400 && now < 1521331199) {
             // 11-17 Mar - 40% bonus
-            baseBonus2 = check_for_manual_bonus(baseBonus2);    // returns 127 if no changes detected
             return _baseAmount.mul(baseBonus2).div(100);
         }
         else if(now >= 1521331200 && now < 1521935999) {
             // 18-24 Mar - 30% bonus
-            baseBonus3 = check_for_manual_bonus(baseBonus3);
             return _baseAmount.mul(baseBonus3).div(100);
         }
         else if(now >= 1521936000 && now < 1524959999) {
             // 25 Mar-28 Apr - 20% bonus
-            baseBonus4 = check_for_manual_bonus(baseBonus4);
             return _baseAmount.mul(baseBonus4).div(100);
         }
         else if(now >= 1524960000 && now < 1526169599) {
             //29 Apr - 12 May - 10% bonus
-            baseBonus5 = check_for_manual_bonus(baseBonus5);
             return _baseAmount.mul(baseBonus5).div(100);
         }
-        else if(now >= 1526169600 && now < 1527379199) {
+        else {
             //13 May - 26 May - no bonus
-            baseBonus6 = check_for_manual_bonus(baseBonus6);
-            return _baseAmount.mul(baseBonus6).div(100);
-        }
-        else if (newBonus_and_newPeriod) {
-            return _baseAmount.mul(bonus_for_add_stage.add(100)).div(100);
-        }
-        else if(now < icoEndTime) {
-            if(_wei >= 1 ether && _wei < 3 ether) {
-                return _baseAmount.mul(101).div(100);
-            }
-            else if(_wei >= 3 ether && _wei < 5 ether) {
-                return _baseAmount.mul(102).div(100);
-            }
-            else if(_wei >= 5 ether) {
-                return _baseAmount.mul(103).div(100);
-            }
-            else {
-                return _baseAmount;
-            }
+            return _baseAmount;
         }
     }
 
