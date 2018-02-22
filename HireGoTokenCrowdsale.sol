@@ -176,7 +176,7 @@ contract HireGoCrowdsale is Ownable {
         icoEndTime = now;
     }
 
-    function distribute_for_founders() public crowdsaleEnded onlyOwner {
+    function distribute_for_founders() public onlyOwner {
         uint to_send = 40000000000000000000000000; //40m
         checkAndMint(to_send);
         token.transfer(wallet, to_send);
