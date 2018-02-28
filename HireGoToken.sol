@@ -10,8 +10,9 @@ contract HireGoToken is MintableToken, BurnableToken {
     uint32 public constant decimals = 18;
 
     function HireGoToken() public {
-        totalSupply = 100000000E18;
+        totalSupply = 100000000E18;  //100m
         balances[owner] = totalSupply; // Add all tokens to issuer balance (crowdsale in this case)
     }
 
 }
+

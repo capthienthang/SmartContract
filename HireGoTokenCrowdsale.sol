@@ -15,8 +15,6 @@ contract HireGoCrowdsale is Ownable {
     uint totalSupply = token.totalSupply();
 
     bool public isRefundAllowed;
-    bool public newBonus_and_newPeriod;
-    bool public new_bonus_for_next_period;
 
     uint public icoStartTime;
     uint public icoEndTime;
@@ -24,21 +22,23 @@ contract HireGoCrowdsale is Ownable {
     uint public weiRaised;
     uint public hardCap; // amount of ETH collected, which marks end of crowd sale
     uint public tokensDistributed; // amount of bought tokens
-    uint public bonus_for_add_stage;
+    uint public foundersTokensUnlockTime;
 
     /*         Bonus variables          */
-    uint internal baseBonus1 = 160;
-    uint internal baseBonus2 = 140;
-    uint internal baseBonus3 = 130;
-    uint internal baseBonus4 = 120;
-    uint internal baseBonus5 = 110;
-	  uint internal baseBonus6 = 100;
+    uint internal baseBonus1 = 135;
+    uint internal baseBonus2 = 130;
+    uint internal baseBonus3 = 125;
+    uint internal baseBonus4 = 115;
     uint public manualBonus;
     /* * * * * * * * * * * * * * * * * * */
 
+    uint public waveCap1;
+    uint public waveCap2;
+    uint public waveCap3;
+    uint public waveCap4;
+
     uint public rate; // how many token units a buyer gets per wei
     uint private icoMinPurchase; // In ETH
-    uint private icoEndDateIncCount;
 
     address[] public investors_number;
     address private wallet; // address where funds are collected
@@ -58,6 +58,11 @@ contract HireGoCrowdsale is Ownable {
         _;
     }
 
+    modifier foundersTokensUnlocked() {
+        require(now > foundersTokensUnlockTime);
+        _;
+    }
+
     modifier crowdsaleInProgress() {
         bool withinPeriod = (now >= icoStartTime && now <= icoEndTime);
         require(withinPeriod);
@@ -72,14 +77,19 @@ contract HireGoCrowdsale is Ownable {
 
         icoStartTime = _icoStartTime;
         icoEndTime = _icoEndTime;
+        foundersTokensUnlockTime = icoEndTime.add(180 days);
         wallet = _wallet;
 
         rate = 250 szabo; // wei per 1 token (0.00025ETH)
 
-        hardCap = 11575 ether;
-        icoEndDateIncCount = 0;
+        hardCap = 11836 ether;
         icoMinPurchase = 50 finney; // 0.05 ETH
         isRefundAllowed = false;
+
+        waveCap1 = 2777 ether;
+        waveCap2 = waveCap1.add(2884 ether);
+        waveCap3 = waveCap2.add(4000 ether);
+        waveCap4 = waveCap3.add(2174 ether);
     }
 
     // fallback function can be used to buy tokens
@@ -106,18 +116,17 @@ contract HireGoCrowdsale is Ownable {
         isRefundAllowed = true;
     }
 
-    // Moves ICO ending date by one month. End date can be moved only 1 times.
-    // Returns true if ICO end date was successfully shifted
-    function moveIcoEndDateByOneMonth(uint bonus_percentage) public onlyOwner crowdsaleInProgress returns (bool) {
-        if (icoEndDateIncCount < 1) {
-            icoEndTime = icoEndTime.add(30 days);
-            icoEndDateIncCount++;
-            newBonus_and_newPeriod = true;
-            bonus_for_add_stage = bonus_percentage;
-            return true;
-        }
-        else {
-            return false;
+    // Sends ordered tokens to investors after ICO end if soft cap is reached
+    // tokens can be send only if ico has ended
+    function sendOrderedTokens() public onlyOwner crowdsaleEnded {
+        address investor;
+        uint tokensCount;
+        for(uint i = 0; i < investors_number.length; i++) {
+            investor = investors_number[i];
+            tokensCount = orderedTokens[investor];
+            assert(tokensCount > 0);
+            orderedTokens[investor] = 0;
+            token.transfer(investor, tokensCount);
         }
     }
 
@@ -150,21 +159,12 @@ contract HireGoCrowdsale is Ownable {
         }
     }
 
-    // Owner of contract can withdraw collected ETH, if soft cap is reached, by calling this function
+    // Owner of contract can withdraw collected ETH by calling this function
     function withdraw() public onlyOwner {
         uint to_send = weiRaised;
         weiRaised = 0;
         FundsWithdrawn(msg.sender, to_send);
         wallet.transfer(to_send);
-    }
-
-    // This function should be used to manually reserve some tokens for "big sharks" or bug-bounty program participants
-    function manualReserve(address _beneficiary, uint _amount) public onlyOwner crowdsaleInProgress {
-        require(_beneficiary != address(0));
-        require(_amount > 0);
-        checkAndMint(_amount);
-        tokensDistributed = tokensDistributed.add(_amount);
-        token.transfer(_beneficiary, _amount);
     }
 
     function burnUnsold() public onlyOwner crowdsaleEnded {
@@ -176,8 +176,8 @@ contract HireGoCrowdsale is Ownable {
         icoEndTime = now;
     }
 
-    function distribute_for_founders() public onlyOwner {
-        uint to_send = 40000000000000000000000000; //40m
+    function distribute_for_founders() public onlyOwner foundersTokensUnlocked {
+        uint to_send = 40000000E18; //40m
         checkAndMint(to_send);
         token.transfer(wallet, to_send);
     }
@@ -217,12 +217,9 @@ contract HireGoCrowdsale is Ownable {
         contributors[_beneficiary] = contributors[_beneficiary].add(cleanWei);
         weiRaised = weiRaised.add(cleanWei);
         totalWeiRaised = totalWeiRaised.add(cleanWei);
-        tokensDistributed = tokensDistributed.add(_tokens);
         orderedTokens[_beneficiary] = orderedTokens[_beneficiary].add(_tokens);
 
         if (change > 0) _beneficiary.transfer(change);
-
-        token.transfer(_beneficiary,_tokens);
     }
 
     // Calculates bonuses based on current stage
@@ -238,28 +235,20 @@ contract HireGoCrowdsale is Ownable {
     // Calculates bonuses, specific for the ICO
     // Contains date and volume based bonuses
     function calculateBonusIco(uint _baseAmount) internal returns(uint) {
-        if(now >= icoStartTime && now < 1520726399) {//3:55-4
-            // 4-10 Mar - 60% bonus
+        if(totalWeiRaised < waveCap1) {
             return _baseAmount.mul(baseBonus1).div(100);
         }
-        else if(now >= 1520726400 && now < 1521331199) {
-            // 11-17 Mar - 40% bonus
+        else if(totalWeiRaised >= waveCap1 && totalWeiRaised < waveCap2) {
             return _baseAmount.mul(baseBonus2).div(100);
         }
-        else if(now >= 1521331200 && now < 1521935999) {
-            // 18-24 Mar - 30% bonus
+        else if(totalWeiRaised >= waveCap2 && totalWeiRaised < waveCap3) {
             return _baseAmount.mul(baseBonus3).div(100);
         }
-        else if(now >= 1521936000 && now < 1524959999) {
-            // 25 Mar-28 Apr - 20% bonus
+        else if(totalWeiRaised >= waveCap3 && totalWeiRaised < waveCap4) {
             return _baseAmount.mul(baseBonus4).div(100);
         }
-        else if(now >= 1524960000 && now < 1526169599) {
-            //29 Apr - 12 May - 10% bonus
-            return _baseAmount.mul(baseBonus5).div(100);
-        }
         else {
-            //13 May - 26 May - no bonus
+            // No bonus
             return _baseAmount;
         }
     }
