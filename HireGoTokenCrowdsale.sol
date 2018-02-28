@@ -217,6 +217,7 @@ contract HireGoCrowdsale is Ownable {
         contributors[_beneficiary] = contributors[_beneficiary].add(cleanWei);
         weiRaised = weiRaised.add(cleanWei);
         totalWeiRaised = totalWeiRaised.add(cleanWei);
+        tokensDistributed = tokensDistributed.add(_tokens);
         orderedTokens[_beneficiary] = orderedTokens[_beneficiary].add(_tokens);
 
         if (change > 0) _beneficiary.transfer(change);
