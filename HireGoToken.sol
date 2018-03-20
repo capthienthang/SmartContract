@@ -15,4 +15,3 @@ contract HireGoToken is MintableToken, BurnableToken {
     }
 
 }
-
